@@ -1,4 +1,4 @@
-# WinReg v6.3.2
+# WinReg v6.4.0
 ## High-level C++ Wrapper Around the Low-level Windows Registry C-interface API
 
 by Giovanni Dicanio
@@ -29,10 +29,10 @@ The Win32 registry value types are mapped to C++ higher-level types according th
 | `REG_MULTI_SZ`       | `std::vector<std::wstring>`  |
 | `REG_BINARY`         | `std::vector<BYTE>`          |
 
-
 This code is currently developed using **Visual Studio 2019** with **C++17** features enabled 
 (`/std:c++17`). I have no longer tested the code with previous compilers. 
 The code compiles cleanly at warning level 4 (`/W4`) in both 32-bit and 64-bit builds.
+Moreover, the code compiles cleanly also in C++20 mode (`/std:c++20`).
 
 This is a **header-only** library, implemented in the **[`WinReg.hpp`](WinReg/WinReg.hpp)** 
 header file.
@@ -158,6 +158,11 @@ else
     //
 }
 ```
+
+The library also supports reading raw binary data for Registry types that are unsupported
+or less documented (e.g. `REG_RESOURCE_LIST`, `REG_FULL_RESOURCE_DESCRIPTOR`, etc.),
+via the `RegKey::GetRawValue` and `RegKey::TryGetRawValue` methods.
+
 
 **Version Note**: WinReg v5.1.1 is the latest version in which the `TryGetXxxValue` methods return 
 `std::optional<T>` (discarding the information about the error code).
