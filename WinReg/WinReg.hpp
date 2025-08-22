@@ -9,7 +9,7 @@
 //               Copyright (C) by Giovanni Dicanio
 //
 // First version: 2017, January 22nd
-// Last update:   2024, November 6th
+// Last update:   2025, August 10th
 //
 // E-mail: <first name>.<last name> AT REMOVE_THIS gmail.com
 //
@@ -34,7 +34,8 @@
 //
 // Compiler: Visual Studio 2019
 // C++ Language Standard: C++17 (/std:c++17)
-// Code compiles cleanly at warning level 4 (/W4) on both 32-bit and 64-bit builds.
+// Code compiles cleanly at warning level 4 (/W4) on both 32-bit and 64-bit builds,
+// also in C++20 mode (/std:c++20).
 //
 // Requires building in Unicode mode (which has been the default since VS2005).
 //
@@ -42,7 +43,7 @@
 //
 // The MIT License(MIT)
 //
-// Copyright(c) 2017-2024 by Giovanni Dicanio
+// Copyright(c) 2017-2025 by Giovanni Dicanio
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files(the "Software"), to deal
@@ -344,6 +345,19 @@ public:
     [[nodiscard]] std::vector<std::wstring> GetMultiStringValue(const std::wstring& valueName) const;
     [[nodiscard]] std::vector<BYTE> GetBinaryValue(const std::wstring& valueName) const;
 
+    // GetRawValue is very similar to GetBinaryValue, except that here in the "raw" version
+    // I do *not* use the RRF_RT_REG_BINARY flag with the ::RegGetValueW API for type checking.
+    // In this way, the type is *not* restricted to REG_BINARY, and this GetRawValue method
+    // can be invoked to retrieve binary data for unsupported or less documented types like
+    // REG_RESOURCE_LIST, REG_FULL_RESOURCE_DESCRIPTOR, REG_LINK, etc.
+    //
+    // This addition came from an issue opened on this code on GitHub:
+    //
+    // No way to get the value of a REG_RESOURCE_LIST key and some others
+    // https://github.com/GiovanniDicanio/WinReg/issues/77
+    //
+    [[nodiscard]] std::vector<BYTE> GetRawValue(const std::wstring& valueName) const;
+
 
     //
     // Registry Value Getters Returning RegExpected<T>
@@ -364,6 +378,12 @@ public:
 
     [[nodiscard]] RegExpected<std::vector<BYTE>>
             TryGetBinaryValue(const std::wstring& valueName) const;
+
+    // Similar to TryGetBinaryValue, but without type restriction to REG_BINARY.
+    // Can be used to retrieve raw binary data for other types like REG_RESOURCE_LIST, etc.
+    // Please read the comment to the GetRawValue method to learn more.
+    [[nodiscard]] RegExpected<std::vector<BYTE>>
+            TryGetRawValue(const std::wstring& valueName) const;
 
 
     //
@@ -1887,6 +1907,76 @@ inline std::vector<BYTE> RegKey::GetBinaryValue(const std::wstring& valueName) c
 }
 
 
+inline std::vector<BYTE> RegKey::GetRawValue(const std::wstring& valueName) const
+{
+    _ASSERTE(IsValid());
+
+    // Room for the binary data, to be read from the registry
+    std::vector<BYTE> binaryData;
+
+    // Size of binary data, in bytes
+    DWORD dataSize = 0;
+
+    // No type restriction, so this method can be used to read raw binary data
+    // for unsupported or less documented types like REG_RESOURCE_LIST,
+    // REG_FULL_RESOURCE_DESCRIPTOR, REG_LINK, etc.
+    constexpr DWORD flags = RRF_RT_ANY;
+
+    LSTATUS retCode = ERROR_MORE_DATA;
+
+    while (retCode == ERROR_MORE_DATA)
+    {
+        // Request the size of the binary data, in bytes
+        retCode = ::RegGetValueW(
+            m_hKey,
+            nullptr,    // no subkey
+            valueName.c_str(),
+            flags,
+            nullptr,    // type not required
+            nullptr,    // output buffer not needed now
+            &dataSize
+        );
+        if (retCode != ERROR_SUCCESS)
+        {
+            throw RegException{ retCode,
+                                "Cannot get the size of the raw binary data: RegGetValueW failed." };
+        }
+
+        // Allocate a buffer of proper size to store the binary data
+        binaryData.resize(dataSize);
+
+        // Handle the special case of zero-length binary data:
+        // If the binary data value in the registry is empty, just return an empty vector.
+        if (dataSize == 0)
+        {
+            _ASSERTE(binaryData.empty());
+            return binaryData;
+        }
+
+        // Call RegGetValue for the second time to read the binary data content into the vector
+        retCode = ::RegGetValueW(
+            m_hKey,
+            nullptr,            // no subkey
+            valueName.c_str(),
+            flags,
+            nullptr,            // type not required
+            binaryData.data(),  // output buffer
+            &dataSize
+        );
+    }
+
+    if (retCode != ERROR_SUCCESS)
+    {
+        throw RegException{ retCode, "Cannot get the raw binary data: RegGetValueW failed." };
+    }
+
+    // Resize vector to the actual size returned by the last call to RegGetValue
+    binaryData.resize(dataSize);
+
+    return binaryData;
+}
+
+
 inline RegExpected<DWORD> RegKey::TryGetDwordValue(const std::wstring& valueName) const
 {
     _ASSERTE(IsValid());
@@ -2145,6 +2235,77 @@ inline RegExpected<std::vector<BYTE>>
     using RegValueType = std::vector<BYTE>;
 
     constexpr DWORD flags = RRF_RT_REG_BINARY;
+
+    // Room for the binary data
+    std::vector<BYTE> data;
+
+    DWORD dataSize = 0; // size of binary data, in bytes
+
+    LSTATUS retCode = ERROR_MORE_DATA;
+
+    while (retCode == ERROR_MORE_DATA)
+    {
+        // Request the size of the binary data, in bytes
+        retCode = ::RegGetValueW(
+            m_hKey,
+            nullptr,    // no subkey
+            valueName.c_str(),
+            flags,
+            nullptr,    // type not required
+            nullptr,    // output buffer not needed now
+            &dataSize
+        );
+        if (retCode != ERROR_SUCCESS)
+        {
+            return details::MakeRegExpectedWithError<RegValueType>(retCode);
+        }
+
+        // Allocate a buffer of proper size to store the binary data
+        data.resize(dataSize);
+
+        // Handle the special case of zero-length binary data:
+        // If the binary data value in the registry is empty, just return
+        if (dataSize == 0)
+        {
+            _ASSERTE(data.empty());
+            return RegExpected<RegValueType>{ data };
+        }
+
+        // Call RegGetValue for the second time to read the binary data content into the vector
+        retCode = ::RegGetValueW(
+            m_hKey,
+            nullptr,        // no subkey
+            valueName.c_str(),
+            flags,
+            nullptr,        // type not required
+            data.data(),    // output buffer
+            &dataSize
+        );
+    }
+
+    if (retCode != ERROR_SUCCESS)
+    {
+        return details::MakeRegExpectedWithError<RegValueType>(retCode);
+    }
+
+    // Resize vector to the actual size returned by the last call to RegGetValue
+    data.resize(dataSize);
+
+    return RegExpected<RegValueType>{ data };
+}
+
+
+inline RegExpected<std::vector<BYTE>>
+    RegKey::TryGetRawValue(const std::wstring& valueName) const
+{
+    _ASSERTE(IsValid());
+
+    using RegValueType = std::vector<BYTE>;
+
+    // No type restriction, so this method can be used to read raw binary data
+    // for unsupported or less documented types like REG_RESOURCE_LIST,
+    // REG_FULL_RESOURCE_DESCRIPTOR, REG_LINK, etc.
+    constexpr DWORD flags = RRF_RT_ANY;
 
     // Room for the binary data
     std::vector<BYTE> data;
