@@ -285,7 +285,60 @@ void Test()
     }
 
 
-    // TODO: May add some tests for the GetRawValue and TryGetRawValue methods.
+    //////////////////////////////////////////////////////////////////////////
+    //
+    // Test the RegKey::GetRawValue and RegKey::TryGetRawValue methods
+    // on the same binary data used for the above RegKey::GetBinaryValue
+    // and RegKey::TryGetBinaryValue methods.
+    //
+    // TODO:
+    // May add more tests for the RegKey::GetRawValue and RegKey::TryGetRawValue
+    // methods, for example trying to read data of different types
+    // from the Registry.
+    // The key point of these "Get RAW Value" methods is that they *ignore*
+    // the data *type*, and just read *raw* binary data from the Registry,
+    // independently from the type.
+    //
+
+    vector<BYTE> testRawBinary1 = key.GetRawValue(L"TestValueBinary");
+    if (testRawBinary1 != testBinary)
+    {
+        wcout << L"RegKey::GetRawValue failed.\n";
+    }
+
+    if (auto testRawBinary2 = key.TryGetRawValue(L"TestTryValueBinary"))
+    {
+        if (testRawBinary2.GetValue() != testBinary)
+        {
+            wcout << L"RegKey::TryGetRawValue failed.\n";
+        }
+    }
+    else
+    {
+        wcout << L"RegKey::TryGetRawValue failed.\n";
+    }
+
+    // Test the special case of zero-length binary array
+    vector<BYTE> testEmptyRawBinary1 = key.GetRawValue(L"TestEmptyBinary");
+    if (testEmptyRawBinary1 != testEmptyBinary)
+    {
+        wcout << L"RegKey::GetRawValue failed with zero-length binary data.\n";
+    }
+
+    if (auto testEmptyRawBinary2 = key.TryGetRawValue(L"TestTryEmptyBinary"))
+    {
+        if (testEmptyRawBinary2.GetValue() != testEmptyBinary)
+        {
+            wcout << L"RegKey::TryGetRawValue failed with zero-length binary data.\n";
+        }
+    }
+    else
+    {
+        wcout << L"RegKey::TryGetRawValue failed.\n";
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+
 
 
     //
